@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// --- tipos RPC (exportados) ---
+// Tipos RPC (exportados) 
 type AppendArgs struct {
 	ListID int
 	Value  int
@@ -41,12 +41,12 @@ type SizeReply struct {
 	Size int
 }
 
-// --- persistência: log entry e snapshot ---
+// Persistência
 type LogEntry struct {
 	Timestamp int64  `json:"timestamp"`
-	Operation string `json:"operation"` //append ou remove
+	Operation string `json:"operation"` 
 	ListID    int    `json:"list_id"`
-	Value     int    `json:"value"` //para append -> valor; para remove -> valor removido
+	Value     int    `json:"value"` 
 }
 
 type Snapshot struct {
@@ -54,19 +54,19 @@ type Snapshot struct {
 	Lists     map[int][]int `json:"lists"`
 }
 
-// --- RemoteList ---
+// RemoteList: estrutura principal
 type RemoteList struct {
 	mu    sync.RWMutex //protege acesso a lists
 	lists map[int][]int
 
-	//locks por lista
+	//mutex por lista
 	locksMu   sync.Mutex
 	listLocks map[int]*sync.Mutex
 
-	//snapshot vs handlers
+	//controle de snapshot
 	snapshotRW sync.RWMutex
 
-	// rquivos
+	
 	basePath      string
 	logFile       string
 	snapshotFile  string
@@ -74,7 +74,7 @@ type RemoteList struct {
 	snapshotMutex sync.Mutex
 }
 
-// --- Configuração de arquivos de persistência ---
+// Configuração dos Arquivos de Persistência
 func NewRemoteListWithBase(basePath string) *RemoteList {
 	rl := &RemoteList{
 		lists:        make(map[int][]int),
@@ -86,7 +86,7 @@ func NewRemoteListWithBase(basePath string) *RemoteList {
 	return rl
 }
 
-// --- utilitário JSONL scanner (simples) ---
+// JSONL Scanner 
 type JSONLScanner struct {
 	data  []byte
 	start int
@@ -111,7 +111,7 @@ func (s *JSONLScanner) Bytes() []byte {
 	return result
 }
 
-// --- obtém (ou cria) mutex por lista ---
+// Obtém ou Cria Mutex por Lista 
 func (rl *RemoteList) getListLock(listID int) *sync.Mutex {
 	rl.locksMu.Lock()
 	l, ok := rl.listLocks[listID]
@@ -123,7 +123,7 @@ func (rl *RemoteList) getListLock(listID int) *sync.Mutex {
 	return l
 }
 
-// --- appendToLog (thread-safe) ---
+// AppendToLog 
 func (rl *RemoteList) appendToLog(op string, listID int, value int) error {
 	rl.logMutex.Lock()
 	defer rl.logMutex.Unlock()
@@ -149,7 +149,7 @@ func (rl *RemoteList) appendToLog(op string, listID int, value int) error {
 	return err
 }
 
-// --- CreateSnapshot (gera snapshot atômico) ---
+// CreateSnapshot 
 func (rl *RemoteList) CreateSnapshot() error {
 	rl.snapshotRW.Lock()
 	defer rl.snapshotRW.Unlock()
@@ -185,8 +185,7 @@ func (rl *RemoteList) CreateSnapshot() error {
 
 // --- LoadFromSnapshot (snapshot + replay log) ---
 func (rl *RemoteList) LoadFromSnapshot() error {
-	// no arranque, garantimos que nenhuma goroutine handler está ativa ainda,
-	// mas por segurança vamos bloquear snapshotRW enquanto carregamos.
+
 	rl.snapshotRW.Lock()
 	defer rl.snapshotRW.Unlock()
 
@@ -195,7 +194,7 @@ func (rl *RemoteList) LoadFromSnapshot() error {
 
 	var snapTS int64 = 0
 
-	//carregar snapshot se existir
+	//Carregar Snapshot se Existir
 	if b, err := os.ReadFile(rl.snapshotFile); err == nil {
 		var snap Snapshot
 		if err := json.Unmarshal(b, &snap); err == nil {
@@ -216,7 +215,7 @@ func (rl *RemoteList) LoadFromSnapshot() error {
 		fmt.Println("[Load] Nenhum snapshot encontrado, iniciando com mapa vazio")
 	}
 
-	//replay do log (aplica apenas operações posteriores ao snapshot)
+	//Replay do Log Após o Snapshot
 	if b, err := os.ReadFile(rl.logFile); err == nil {
 		scanner := NewJSONLScanner(b)
 		for scanner.Scan() {
@@ -225,11 +224,11 @@ func (rl *RemoteList) LoadFromSnapshot() error {
 				//ignorar entradas corrompidas
 				continue
 			}
-			//pular entradas já incorporadas no snapshot
+			//Pular Entradas já Incorporadas no Snapshot
 			if snapTS != 0 && entry.Timestamp <= snapTS {
 				continue
 			}
-			rl.applyLogEntry(entry, false /* já está persistido no log */)
+			rl.applyLogEntry(entry, false /*log já escrito*/)
 		}
 		fmt.Println("[Load] Replay do log concluído")
 	} else {
@@ -239,7 +238,7 @@ func (rl *RemoteList) LoadFromSnapshot() error {
 	return nil
 }
 
-// --- applyLogEntry (aux) ---
+// applyLogEntry 
 func (rl *RemoteList) applyLogEntry(entry LogEntry, logWritten bool) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -255,11 +254,10 @@ func (rl *RemoteList) applyLogEntry(entry LogEntry, logWritten bool) {
 	_ = logWritten
 }
 
-// --- RPC Methods (exported) ---
+// Metodos RPC
 
-// Append: adiciona value ao final da lista list_id
+// Append: adiciona ao final da lista list_id
 func (rl *RemoteList) Append(args AppendArgs, reply *AppendReply) error {
-	//evitar conflito com snapshot (muitos handlers podem operar quando não há snapshot)
 	rl.snapshotRW.RLock()
 	defer rl.snapshotRW.RUnlock()
 
@@ -268,7 +266,7 @@ func (rl *RemoteList) Append(args AppendArgs, reply *AppendReply) error {
 	lck.Lock()
 	defer lck.Unlock()
 
-	//gravar no log primeiro (WAL-like) para durabilidade
+	//gravar no log primeiro 
 	if err := rl.appendToLog("append", args.ListID, args.Value); err != nil {
 		return err
 	}
@@ -323,10 +321,8 @@ func (rl *RemoteList) Remove(args RemoveArgs, reply *RemoveReply) error {
 	rl.lists[args.ListID] = ls[:len(ls)-1]
 	rl.mu.Unlock()
 
-	//gravar no log o valor removido (durability)
+	//gravar no log o valor removido 
 	if err := rl.appendToLog("remove", args.ListID, val); err != nil {
-		//se falhar ao logar, isso é grave — mas já removemos em memória.
-		//olítica: reportar erro para o cliente (pode decidir re-tentar)
 		return fmt.Errorf("erro ao gravar log de remove: %w", err)
 	}
 
@@ -350,7 +346,7 @@ func (rl *RemoteList) Size(args SizeArgs, reply *SizeReply) error {
 	return nil
 }
 
-// GetLists (apenas para debug/testing) - retorna cópia
+// GetLists - retorna cópia
 func (rl *RemoteList) GetLists(_ struct{}, reply *map[int][]int) error {
 	rl.snapshotRW.RLock()
 	defer rl.snapshotRW.RUnlock()

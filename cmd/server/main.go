@@ -19,19 +19,19 @@ func main() {
 
 	rl := remotelist.NewRemoteListWithBase(basePath)
 
-	// carregar estado (snapshot + log)
+	// Carregar Estado (snapshot + log)
 	if err := rl.LoadFromSnapshot(); err != nil {
 		fmt.Println("Erro ao carregar snapshot/log:", err)
 	}
 
-	// registrar RPC
+	// Registrar RPC
 	server := rpc.NewServer()
 	if err := server.RegisterName("RemoteList", rl); err != nil {
 		fmt.Println("Erro ao registrar RemoteList:", err)
 		return
 	}
 
-	// goroutine que cria snapshots periódicos
+	// Goroutine que Cria Snapshots Periódicos
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -45,7 +45,7 @@ func main() {
 		}
 	}()
 
-	// capturar sinais para snapshot final
+	// Capturar Sinais para Snapshot Final
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -59,7 +59,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// listener
+	// Listener
 	addr := "localhost:5000"
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
